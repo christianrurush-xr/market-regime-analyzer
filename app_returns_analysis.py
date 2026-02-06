@@ -5,14 +5,14 @@ import yfinance as yf
 import matplotlib.pyplot as plt
 
 # =========================
-# CONFIG
+# CONFIG STREAMLIT
 # =========================
-st.set_page_config(page_title="Return Regime Analyzer", layout="centered")
-st.title("📊 Return Regime Analyzer")
+st.set_page_config(page_title="Market Regime Analyzer", layout="centered")
+st.title("📊 Market Regime Analyzer")
 
 st.markdown("""
-Análisis **avanzado y estadístico** de rendimientos diarios.
-Esta herramienta **NO predice**, sino que evalúa **riesgo, régimen y contexto de mercado**.
+Análisis estadístico **robusto y explicativo** de rendimientos diarios.
+No es un modelo predictivo: es una **herramienta de contexto, riesgo y régimen**.
 """)
 
 # =========================
@@ -23,7 +23,7 @@ start_date = st.date_input("Fecha inicio", value=pd.to_datetime("2015-01-01"))
 run = st.button("Ejecutar análisis")
 
 # =========================
-# FUNCIONES
+# FUNCIONES AUXILIARES
 # =========================
 def days_since_event(returns, threshold):
     idx = returns[returns <= threshold].index
@@ -39,7 +39,7 @@ def prob_positive_after_drop(returns, threshold):
         return None, 0
 
     next_returns = returns.shift(-1).loc[drops.index]
-    return (next_returns > 0).mean(), len(drops)
+    return float((next_returns > 0).mean()), len(drops)
 
 # =========================
 # MAIN
@@ -55,18 +55,30 @@ if run:
             progress=False
         )
 
+    # -------- VALIDACIONES ----------
     if df.empty or "Close" not in df.columns:
-        st.error("No se pudieron descargar datos.")
+        st.error("No se pudieron descargar datos para este ticker.")
         st.stop()
 
-    close = df["Close"]
-    returns = close.pct_change().dropna()
+    # -------- FUERZA SERIES 1D ----------
+    close = df["Close"].squeeze()
+
+    if not isinstance(close, pd.Series):
+        st.error("Error inesperado: Close no es una serie.")
+        st.stop()
+
+    # -------- RETURNS ----------
+    returns = close.pct_change().dropna().squeeze()
+
+    if len(returns) < 50:
+        st.error("Muy pocos datos para análisis estadístico.")
+        st.stop()
 
     # =========================
-    # STATS
+    # ESTADÍSTICAS BASE
     # =========================
-    mu = returns.mean()
-    sigma = returns.std()
+    mu = float(returns.mean())
+    sigma = float(returns.std())
 
     th_mod = mu - sigma
     th_fuerte = mu - 2 * sigma
@@ -81,20 +93,19 @@ if run:
     p_muy_fuerte, n_muy_fuerte = prob_positive_after_drop(returns, th_muy_fuerte)
 
     # =========================
-    # FEATURE ENGINEERING
+    # FEATURES TEMPORALES
     # =========================
-    close = df["Close"].squeeze()
-    returns = close.pct_change().dropna().squeeze()
-
     df_ret = returns.to_frame("ret")
     df_ret["weekday"] = df_ret.index.dayofweek
     df_ret["day"] = df_ret.index.day
     df_ret["month"] = df_ret.index.month
 
-
     weekday_map = {
-        0: "Lunes", 1: "Martes", 2: "Miércoles",
-        3: "Jueves", 4: "Viernes"
+        0: "Lunes",
+        1: "Martes",
+        2: "Miércoles",
+        3: "Jueves",
+        4: "Viernes"
     }
 
     # =========================
@@ -124,59 +135,45 @@ if run:
         st.markdown("### 🔁 Probabilidad de rebote al día siguiente")
 
         if p_mod is not None:
-            st.write(f"🟡 Moderada: **{p_mod*100:.1f}%**  (n={n_mod})")
+            st.write(f"🟡 Moderada: **{p_mod*100:.1f}%** (n={n_mod})")
         else:
             st.write("🟡 Moderada: sin eventos suficientes")
 
         if p_fuerte is not None:
-            st.write(f"🟠 Fuerte: **{p_fuerte*100:.1f}%**  (n={n_fuerte})")
+            st.write(f"🟠 Fuerte: **{p_fuerte*100:.1f}%** (n={n_fuerte})")
         else:
             st.write("🟠 Fuerte: sin eventos suficientes")
 
         if p_muy_fuerte is not None:
-            st.write(f"🔴 Muy fuerte: **{p_muy_fuerte*100:.1f}%**  (n={n_muy_fuerte})")
+            st.write(f"🔴 Muy fuerte: **{p_muy_fuerte*100:.1f}%** (n={n_muy_fuerte})")
         else:
             st.write("🔴 Muy fuerte: sin eventos suficientes")
-
-        st.markdown("""
-        **Interpretación rápida**  
-        - >50% sugiere rebote estadístico (no garantía)  
-        - <50% indica persistencia de debilidad  
-        - Eventos extremos suelen aumentar volatilidad posterior  
-        """)
 
     # =========================
     # TAB 2 — PATRONES
     # =========================
     with tab2:
-        st.subheader("Rendimiento promedio por día de la semana")
+        st.subheader("Retorno promedio por día de la semana")
 
         by_weekday = df_ret.groupby("weekday")["ret"].mean()
         by_weekday.index = by_weekday.index.map(weekday_map)
 
         fig1, ax1 = plt.subplots()
         by_weekday.plot(kind="bar", ax=ax1)
-        ax1.set_ylabel("Retorno promedio")
         ax1.grid()
         st.pyplot(fig1)
 
-        st.subheader("Rendimiento promedio por día del mes")
-
-        by_day = df_ret.groupby("day")["ret"].mean()
+        st.subheader("Retorno promedio por día del mes")
 
         fig2, ax2 = plt.subplots()
-        by_day.plot(ax=ax2)
-        ax2.set_ylabel("Retorno promedio")
+        df_ret.groupby("day")["ret"].mean().plot(ax=ax2)
         ax2.grid()
         st.pyplot(fig2)
 
-        st.subheader("Rendimiento promedio por mes")
-
-        by_month = df_ret.groupby("month")["ret"].mean()
+        st.subheader("Retorno promedio por mes")
 
         fig3, ax3 = plt.subplots()
-        by_month.plot(kind="bar", ax=ax3)
-        ax3.set_ylabel("Retorno promedio")
+        df_ret.groupby("month")["ret"].mean().plot(kind="bar", ax=ax3)
         ax3.grid()
         st.pyplot(fig3)
 
@@ -197,20 +194,20 @@ if run:
 
         st.markdown("""
         **Lectura avanzada**
-        - Las colas muestran eventos raros pero críticos  
-        - Mucho tiempo sin caídas extremas ≠ bajo riesgo  
-        - Esta gráfica es clave para entender *colas gordas*
+        - Las colas representan eventos raros pero críticos
+        - Ausencia reciente de caídas ≠ bajo riesgo
+        - Ideal para entender *tail risk*
         """)
 
     # =========================
-    # CONCLUSIÓN GLOBAL
+    # CONCLUSIÓN
     # =========================
     st.markdown("---")
     st.subheader("🧠 Conclusión general")
 
     if d_muy_fuerte is not None and d_muy_fuerte < 30:
-        st.error("🔴 Régimen de **alto riesgo reciente**. Priorizar gestión de riesgo.")
+        st.error("🔴 Régimen de alto riesgo reciente.")
     elif d_fuerte is not None and d_fuerte < 30:
-        st.warning("🟠 Volatilidad elevada reciente. Precaución táctica.")
+        st.warning("🟠 Volatilidad elevada reciente.")
     else:
         st.success("🟢 Régimen estadísticamente estable.")

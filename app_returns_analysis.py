@@ -83,10 +83,14 @@ if run:
     # =========================
     # FEATURE ENGINEERING
     # =========================
+    close = df["Close"].squeeze()
+    returns = close.pct_change().dropna().squeeze()
+
     df_ret = returns.to_frame("ret")
     df_ret["weekday"] = df_ret.index.dayofweek
     df_ret["day"] = df_ret.index.day
     df_ret["month"] = df_ret.index.month
+
 
     weekday_map = {
         0: "Lunes", 1: "Martes", 2: "Miércoles",
